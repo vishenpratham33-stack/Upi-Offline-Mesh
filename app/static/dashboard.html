@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPI Offline Mesh</title>
+<style>
+:root{--ground:#e8ecef;--panel:#f7f9fa;--ink:#172430;--muted:#5d6d7a;--line:#c5ced6;
+--mesh:#2c3fb5;--ok:#1f6f5c;--warn:#b4540a;--bad:#a82b3a;
+--serif:ui-serif,"Iowan Old Style","Palatino Linotype",Georgia,serif;--sans:ui-sans-serif,system-ui,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.5 var(--sans)}
+header{padding:28px 32px 8px;max-width:1280px;margin:auto}
+h1{font:600 34px/1.1 var(--serif);margin:0 0 6px;letter-spacing:-.01em}
+header p{margin:0;color:var(--muted);max-width:62ch}
+main{display:grid;grid-template-columns:320px 1fr;gap:20px;max-width:1280px;margin:auto;padding:20px 32px 48px}
+@media(max-width:900px){main{grid-template-columns:1fr;padding:16px}header{padding:20px 16px 0}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px}
+h2{font:600 19px var(--serif);margin:0 0 12px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 3px}
+select,input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;font:inherit;color:var(--ink)}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:4px;border:1px solid var(--ink);background:var(--ink);color:#fff;padding:9px 14px;margin-top:12px;width:100%}
+button.secondary{background:transparent;color:var(--ink)}
+button:hover{filter:brightness(1.2)}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--mesh);outline-offset:2px}
+.stack{display:grid;gap:20px}
+.steps button{margin-top:8px;text-align:left}
+.steps small{display:block;font-weight:400;opacity:.75}
+#graph{width:100%;height:auto;display:block}
+.node circle.body{fill:#fff;stroke:var(--ink);stroke-width:1.5}
+.node.bridge circle.ring{fill:none;stroke:var(--mesh);stroke-width:2;stroke-dasharray:3 3}
+.node text{font:600 13px var(--sans);text-anchor:middle;fill:var(--ink)}
+.node text.sub{font-weight:400;font-size:11px;fill:var(--muted)}
+.edge{stroke:var(--line);stroke-width:1}
+.holding circle.body{fill:var(--mesh)}.holding text.count{fill:#fff}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:13px;padding:4px 8px 6px 0;border-bottom:1px solid var(--line)}
+td{padding:7px 8px 7px 0;border-bottom:1px solid #e3e8ec;vertical-align:top}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid}
+.SETTLED{color:var(--ok)}.DUPLICATE_DROPPED{color:var(--warn)}.INVALID,.REJECTED,.ERROR{color:var(--bad)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}@media(max-width:1100px){.two{grid-template-columns:1fr}}
+#log{font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;max-height:190px;overflow:auto;margin:0;white-space:pre-wrap}
+.empty{color:var(--muted);font-style:italic}
+</style>
+</head>
+<body>
+<header>
+  <h1>UPI Offline Mesh</h1>
+  <p>A payment made in a basement hops phone to phone until one of them reaches 4G. The server decrypts, checks the sender's signature, and settles it exactly once.</p>
+</header>
+<main>
+  <div class="stack">
+    <section>
+      <h2>Compose a payment</h2>
+      <label for="sender">From</label><select id="sender"></select>
+      <label for="receiver">To</label><select id="receiver"></select>
+      <label for="amount">Amount (₹)</label><input id="amount" type="number" min="1" step="0.01" value="500">
+      <label for="pin">PIN (unlocks the phone's signing key)</label><input id="pin" type="password" value="1234" autocomplete="off">
+      <button id="send">Send into the mesh</button>
+      <small style="color:var(--muted)">Demo PINs: Alice 1234, Bob 4321, Carol 1111, Dave 2222</small>
+    </section>
+    <section class="steps">
+      <h2>Move it along</h2>
+      <button class="secondary" id="gossip">Run a gossip round<small>Every phone shares with every phone in range</small></button>
+      <button class="secondary" id="flush">Bridges upload<small>Both 4G phones post at the same moment</small></button>
+      <button class="secondary" id="reset">Reset the mesh<small>Clears phones and the dedupe cache</small></button>
+    </section>
+  </div>
+  <div class="stack">
+    <section><h2>The mesh</h2><svg id="graph" viewBox="0 0 700 300" role="img" aria-label="Phones in the mesh and the packets each holds"></svg></section>
+    <section><h2>Activity</h2><pre id="log"><span class="empty">Nothing yet. Send a payment to begin.</span></pre></section>
+    <div class="two">
+      <section><h2>Account balances</h2><table id="accounts"></table></section>
+      <section><h2>Ledger</h2><table id="ledger"></table></section>
+    </div>
+  </div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const inr=p=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR'}).format(p/100);
+const api=async(path,method='GET',body)=>{
+  const r=await fetch('/api/'+path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(data.detail?(typeof data.detail==='string'?data.detail:'invalid input'):r.statusText);
+  return data;
+};
+const log=(msg)=>{const el=$('log');if(el.querySelector('.empty'))el.textContent='';el.textContent+=msg+'\n';el.scrollTop=el.scrollHeight};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function drawMesh(devices){
+  const cx=350,cy=150,rx=250,ry=105,pos=devices.map((_,i)=>{const a=-Math.PI/2+i*2*Math.PI/devices.length;return[cx+rx*Math.cos(a),cy+ry*Math.sin(a)]});
+  let svg='';
+  pos.forEach((a,i)=>pos.forEach((b,j)=>{if(j>i)svg+=`<line class="edge" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/>`}));
+  devices.forEach((d,i)=>{const[x,y]=pos[i];
+    svg+=`<g class="node ${d.has_internet?'bridge':''} ${d.packet_count?'holding':''}">
+      ${d.has_internet?`<circle class="ring" cx="${x}" cy="${y}" r="31"/>`:''}
+      <circle class="body" cx="${x}" cy="${y}" r="24"/>
+      <text class="count" x="${x}" y="${y+5}">${d.packet_count}</text>
+      <text x="${x}" y="${y+48}">${esc(d.device_id.replace('phone-',''))}</text>
+      <text class="sub" x="${x}" y="${y+62}">${d.has_internet?'has 4G':'offline'}</text></g>`});
+  $('graph').innerHTML=svg;
+}
+async function refresh(){
+  const [mesh,acc,tx]=await Promise.all([api('mesh/state'),api('accounts'),api('transactions')]);
+  drawMesh(mesh);
+  $('accounts').innerHTML='<tr><th>Account</th><th class="num" style="text-align:right">Balance</th></tr>'+
+    acc.map(a=>`<tr><td>${esc(a.name)}<br><small style="color:var(--muted)">${esc(a.vpa)}</small></td><td class="num">${inr(a.balance_paise)}</td></tr>`).join('');
+  $('ledger').innerHTML=tx.length?'<tr><th>Payment</th><th>Status</th></tr>'+tx.map(t=>
+    `<tr><td>${esc(t.sender.split('@')[0])} to ${esc(t.receiver.split('@')[0])}<br><small style="color:var(--muted)">${inr(t.amount_paise)} via ${esc(t.bridge||'-')}</small></td>
+     <td><span class="pill ${t.status}">${t.status.toLowerCase()}</span>${t.reason?`<br><small>${esc(t.reason)}</small>`:''}</td></tr>`).join('')
+    :'<tr><td class="empty">No settled payments yet.</td></tr>';
+  if(!$('sender').options.length){
+    $('sender').innerHTML=$('receiver').innerHTML=acc.map(a=>`<option value="${esc(a.vpa)}">${esc(a.name)}</option>`).join('');
+    $('receiver').selectedIndex=1;
+  }
+}
+const act=(id,fn)=>$(id).addEventListener('click',async()=>{try{await fn()}catch(e){log('Error: '+e.message)}await refresh()});
+act('send',async()=>{
+  const r=await api('demo/send','POST',{sender:$('sender').value,receiver:$('receiver').value,amount:$('amount').value,pin:$('pin').value});
+  log(`Encrypted and signed on the sender's phone. Packet ${r.packet_id.slice(0,8)} is on ${r.injected_into}.`)});
+act('gossip',async()=>{const r=await api('mesh/gossip','POST');log(`Gossip round: ${r.transfers} packet copies moved.`)});
+act('flush',async()=>{const r=await api('mesh/flush','POST');
+  if(!r.results.length)log('No bridge holds a packet yet. Run a gossip round first.');
+  r.results.forEach(x=>log(`${x.bridge}: ${x.outcome.toLowerCase().replace('_',' ')}${x.reason?' ('+x.reason+')':''}`))});
+act('reset',async()=>{await api('mesh/reset','POST');log('Mesh reset.')});
+refresh();
+</script>
+</body>
+</html>
