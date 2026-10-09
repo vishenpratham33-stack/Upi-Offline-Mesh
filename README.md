@@ -1,5 +1,5 @@
 # UPI Offline Mesh (Python)
-   ![Dashboard](docs/dashboard.png)
+   ![Dashboard](docs/dashboard.upi.png)
 
    **Live demo:** https://upi-offline-mesh-80hu.onrender.com
 
