@@ -33,6 +33,7 @@ class MeshSimulator:
         self._ingestion = ingestion
         self._initial_ttl = initial_ttl
         self._lock = threading.RLock()
+        self._flow_lock = threading.Lock()
         self._devices: dict[str, VirtualDevice] = {}
         self.reset()
 
@@ -46,11 +47,12 @@ class MeshSimulator:
                 raise KeyError(device_id)
             self._devices[device_id].packets[_key(packet)] = packet
 
-    def gossip_round(self) -> int:
-        """One hop: every device pushes each packet (ttl>0) to every device lacking it."""
+    def gossip_round_detailed(self) -> list[dict]:
+        """One hop: every device pushes each packet (ttl>0) to every device lacking it.
+        Returns the individual transfers so a UI can animate them."""
         with self._lock:
             snapshot = [(d, list(d.packets.values())) for d in self._devices.values()]
-            transfers = 0
+            transfers: list[dict] = []
             for src, packets in snapshot:
                 for p in packets:
                     if p.ttl <= 0:
@@ -59,8 +61,34 @@ class MeshSimulator:
                     for dst in self._devices.values():
                         if dst is not src and _key(p) not in dst.packets:
                             dst.packets[_key(p)] = fwd
-                            transfers += 1
+                            transfers.append({"from": src.device_id, "to": dst.device_id, "ttl": fwd.ttl})
             return transfers
+
+    def gossip_round(self) -> int:
+        return len(self.gossip_round_detailed())
+
+    def run_payment_flow(self, device_id: str, packet: MeshPacket) -> dict:
+        """The whole demo in one call: fresh mesh -> inject -> gossip until it stops spreading
+        -> bridges upload in parallel. Returns a trace the dashboard replays as an animation.
+        Serialised so two visitors' payments can't interleave on the shared demo mesh."""
+        with self._flow_lock:
+            self.reset()
+            self.inject(device_id, packet)
+            rounds: list[list[dict]] = []
+            for _ in range(self._initial_ttl + 1):
+                transfers = self.gossip_round_detailed()
+                if not transfers:
+                    break
+                rounds.append(transfers)
+            uploads = self.flush_bridges()
+            return {
+                "packet_id": packet.packet_id,
+                "origin": device_id,
+                "devices": [{"device_id": d["device_id"], "has_internet": d["has_internet"]}
+                            for d in self.state()],
+                "rounds": rounds,
+                "uploads": uploads,
+            }
 
     def flush_bridges(self) -> list[dict]:
         """Every internet-connected device uploads all packets it holds, in parallel."""

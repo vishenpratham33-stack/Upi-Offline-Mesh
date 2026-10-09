@@ -72,6 +72,30 @@ def demo_send(body: SendRequest, request: Request):
     return {"packet_id": packet.packet_id, "ttl": packet.ttl, "injected_into": body.device_id}
 
 
+@router.post("/pay")
+def pay(body: SendRequest, request: Request):
+    """One-click payment: sign + encrypt on the sender's phone, spread through the mesh, bridges
+    upload, server settles. Returns the full trace (hops + uploads) for the UI to animate."""
+    c = _c(request)
+    try:
+        packet = c.demo.create_packet(body)
+        trace = c.mesh.run_payment_flow(body.device_id, packet)
+    except WrongPin:
+        raise HTTPException(403, "incorrect PIN")
+    except KeyError as exc:
+        raise HTTPException(404, f"unknown sender or device: {exc.args[0]}")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    outcomes = {u.get("outcome") for u in trace["uploads"]}
+    # Headline result: the most informative outcome wins (a duplicate alone is the least interesting).
+    trace["result"] = next(
+        (o for o in ("SETTLED", "REJECTED", "INVALID", "ERROR", "DUPLICATE_DROPPED") if o in outcomes),
+        "NOT_DELIVERED",
+    )
+    trace["reason"] = next((u.get("reason") for u in trace["uploads"] if u.get("reason")), None)
+    return trace
+
+
 @router.post("/mesh/gossip")
 def gossip(request: Request):
     return {"transfers": _c(request).mesh.gossip_round()}

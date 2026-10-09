@@ -83,3 +83,47 @@ def test_reset_clears_mesh_and_cache(client):
 def test_server_key_and_dashboard(client):
     assert "BEGIN PUBLIC KEY" in client.get("/api/server-key").json()["public_key_pem"]
     assert client.get("/api/health").json() == {"status": "ok"}
+
+
+def _pay(client, **over):
+    body = {"sender": "alice@demo", "receiver": "bob@demo", "amount": "500.00", "pin": "1234"}
+    return client.post("/api/pay", json={**body, **over})
+
+
+def test_pay_runs_whole_flow_in_one_call(client):
+    r = _pay(client)
+    assert r.status_code == 200
+    t = r.json()
+    assert t["result"] == "SETTLED" and t["origin"] == "phone-alice"
+    assert len(t["rounds"][0]) == 4                       # alice -> the other 4 phones
+    assert sorted(u["outcome"] for u in t["uploads"]) == ["DUPLICATE_DROPPED", "SETTLED"]
+    assert {d["device_id"] for d in t["devices"] if d["has_internet"]} == {"phone-bridge", "phone-bridge-2"}
+    b = _balances(client)
+    assert b["alice@demo"] == 100_000_00 - 500_00 and b["bob@demo"] == 50_000_00 + 500_00
+
+
+def test_pay_twice_settles_twice(client):
+    assert _pay(client).json()["result"] == "SETTLED"
+    assert _pay(client).json()["result"] == "SETTLED"
+    assert _balances(client)["alice@demo"] == 100_000_00 - 1000_00
+
+
+def test_pay_reports_rejection_with_reason(client):
+    for _ in range(2):
+        assert _pay(client, sender="dave@demo", pin="2222", amount="5000").json()["result"] == "SETTLED"
+    t = _pay(client, sender="dave@demo", pin="2222", amount="5000").json()
+    assert t["result"] == "REJECTED" and t["reason"] == "insufficient funds"
+
+
+def test_pay_error_codes(client):
+    assert _pay(client, pin="9999").status_code == 403
+    assert _pay(client, sender="nobody@demo").status_code == 404
+    assert _pay(client, amount="1.234").status_code == 422
+
+
+def test_pay_concurrent_visitors_do_not_corrupt_each_other(client):
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as pool:
+        results = list(pool.map(lambda _: _pay(client).json()["result"], range(4)))
+    assert results == ["SETTLED"] * 4
+    assert _balances(client)["alice@demo"] == 100_000_00 - 4 * 500_00

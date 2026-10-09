@@ -4,126 +4,321 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UPI Offline Mesh</title>
+<link rel="icon" href="data:,">
 <style>
-:root{--ground:#e8ecef;--panel:#f7f9fa;--ink:#172430;--muted:#5d6d7a;--line:#c5ced6;
+:root{--ground:#e8ecef;--panel:#f7f9fa;--ink:#172430;--muted:#566774;--line:#c5ced6;
 --mesh:#2c3fb5;--ok:#1f6f5c;--warn:#b4540a;--bad:#a82b3a;
+--basement:#c3cfd9;--street:#e3edf5;--bank:#d6dde3;
 --serif:ui-serif,"Iowan Old Style","Palatino Linotype",Georgia,serif;--sans:ui-sans-serif,system-ui,"Segoe UI",sans-serif}
 *{box-sizing:border-box}
 body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.5 var(--sans)}
-header{padding:28px 32px 8px;max-width:1280px;margin:auto}
+header{padding:26px 32px 4px;max-width:1280px;margin:auto}
 h1{font:600 34px/1.1 var(--serif);margin:0 0 6px;letter-spacing:-.01em}
-header p{margin:0;color:var(--muted);max-width:62ch}
-main{display:grid;grid-template-columns:320px 1fr;gap:20px;max-width:1280px;margin:auto;padding:20px 32px 48px}
-@media(max-width:900px){main{grid-template-columns:1fr;padding:16px}header{padding:20px 16px 0}}
+header p{margin:0;color:var(--muted);max-width:64ch}
+main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;max-width:1280px;margin:auto;padding:18px 32px 48px}
+#sceneBox{overflow-x:auto}
+
 section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px}
-h2{font:600 19px var(--serif);margin:0 0 12px}
+h2{font:600 19px var(--serif);margin:0 0 10px}
 label{display:block;font-size:13px;color:var(--muted);margin:10px 0 3px}
 select,input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;font:inherit;color:var(--ink)}
-button{font:inherit;font-weight:600;cursor:pointer;border-radius:4px;border:1px solid var(--ink);background:var(--ink);color:#fff;padding:9px 14px;margin-top:12px;width:100%}
-button.secondary{background:transparent;color:var(--ink)}
-button:hover{filter:brightness(1.2)}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--mesh);outline-offset:2px}
-.stack{display:grid;gap:20px}
-.steps button{margin-top:8px;text-align:left}
-.steps small{display:block;font-weight:400;opacity:.75}
-#graph{width:100%;height:auto;display:block}
-.node circle.body{fill:#fff;stroke:var(--ink);stroke-width:1.5}
-.node.bridge circle.ring{fill:none;stroke:var(--mesh);stroke-width:2;stroke-dasharray:3 3}
-.node text{font:600 13px var(--sans);text-anchor:middle;fill:var(--ink)}
-.node text.sub{font-weight:400;font-size:11px;fill:var(--muted)}
-.edge{stroke:var(--line);stroke-width:1}
-.holding circle.body{fill:var(--mesh)}.holding text.count{fill:#fff}
+button{font:inherit;font-weight:600;cursor:pointer;border-radius:4px;border:1px solid var(--ink);background:var(--ink);color:#fff;padding:11px 14px;margin-top:14px;width:100%}
+button.secondary{background:transparent;color:var(--ink);padding:8px 12px;margin-top:8px;text-align:left}
+button:disabled{opacity:.55;cursor:progress}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--mesh);outline-offset:2px}
+.hint{display:block;margin-top:8px;color:var(--muted);font-size:12.5px}
+#err{color:var(--bad);font-size:14px;min-height:1.2em;margin-top:8px}
+.stack{display:grid;gap:20px;align-content:start}
+/* scene */
+#sceneWrap{padding:10px 10px 14px}
+#scene{width:100%;height:auto;display:block;border-radius:4px}
+#scene text{font-family:var(--sans)}
+.zone{font:600 15px var(--serif)!important;fill:var(--muted)}
+.edge{stroke:#8c9bab;stroke-width:1.2;stroke-dasharray:3 5;opacity:.5;transition:stroke .3s,stroke-width .3s,opacity .3s}
+.name{font-size:13px;font-weight:600;text-anchor:middle;fill:var(--ink)}
+.sub{font-size:11px;text-anchor:middle;fill:var(--muted)}
+.lockbadge{transform-origin:center;transform-box:fill-box}
+.pop{animation:pop .35s ease-out}
+@keyframes pop{0%{transform:scale(.2)}70%{transform:scale(1.25)}100%{transform:scale(1)}}
+.ping{animation:ping .9s ease-out}
+@keyframes ping{0%{r:24;opacity:.9}100%{r:46;opacity:0}}
+@media(prefers-reduced-motion:reduce){.pop,.ping{animation:none}.edge{transition:none}}
+ol#steps{display:flex;list-style:none;margin:14px 6px 0;padding:0;gap:6px}
+#steps li{flex:1;display:flex;gap:8px;align-items:flex-start;font-size:13px;color:var(--muted);line-height:1.3}
+#steps li span.n{flex:none;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-weight:700;font-size:12px;background:#fff}
+#steps li.active{color:var(--ink);font-weight:600}
+#steps li.active span.n{border-color:var(--mesh);background:var(--mesh);color:#fff}
+#steps li.done span.n{border-color:var(--ok);background:var(--ok);color:#fff}
+@media(max-width:620px){ol#steps{flex-direction:column}}
+#caption{margin:12px 6px 0;min-height:2.6em;font-size:14.5px}
+#result{margin:10px 6px 0;padding:10px 12px;border-left:4px solid var(--ok);background:#fff;font-size:14.5px}
+#result.bad{border-color:var(--bad)}
+/* tables */
 table{width:100%;border-collapse:collapse;font-size:14px}
 th{text-align:left;font-weight:600;color:var(--muted);font-size:13px;padding:4px 8px 6px 0;border-bottom:1px solid var(--line)}
 td{padding:7px 8px 7px 0;border-bottom:1px solid #e3e8ec;vertical-align:top}
 td.num{text-align:right;font-variant-numeric:tabular-nums}
 .pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid}
-.SETTLED{color:var(--ok)}.DUPLICATE_DROPPED{color:var(--warn)}.INVALID,.REJECTED,.ERROR{color:var(--bad)}
+.SETTLED{color:var(--ok)}.REJECTED{color:var(--bad)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:20px}@media(max-width:1100px){.two{grid-template-columns:1fr}}
-#log{font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;max-height:190px;overflow:auto;margin:0;white-space:pre-wrap}
+details{margin-top:14px}summary{cursor:pointer;font-weight:600;color:var(--muted);font-size:14px}
+#trace{font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace;max-height:180px;overflow:auto;margin:8px 0 0;white-space:pre-wrap}
 .empty{color:var(--muted);font-style:italic}
+@media(max-width:900px){
+  main{display:flex;flex-direction:column;padding:14px}.stack{display:contents}
+  #payForm{order:1}#sceneWrap{order:2}#balancesBox{order:3}#ledgerBox{order:4}
+  header{padding:20px 16px 0}#scene{min-width:560px}}
 </style>
 </head>
 <body>
 <header>
   <h1>UPI Offline Mesh</h1>
-  <p>A payment made in a basement hops phone to phone until one of them reaches 4G. The server decrypts, checks the sender's signature, and settles it exactly once.</p>
+  <p>No signal in the basement? The payment is locked on your phone, passed from phone to phone, and uploaded by whoever reaches 4G first. The bank settles it once.</p>
 </header>
 <main>
   <div class="stack">
-    <section>
-      <h2>Compose a payment</h2>
+    <section id="payForm">
+      <h2>Make a payment</h2>
       <label for="sender">From</label><select id="sender"></select>
       <label for="receiver">To</label><select id="receiver"></select>
       <label for="amount">Amount (₹)</label><input id="amount" type="number" min="1" step="0.01" value="500">
-      <label for="pin">PIN (unlocks the phone's signing key)</label><input id="pin" type="password" value="1234" autocomplete="off">
-      <button id="send">Send into the mesh</button>
-      <small style="color:var(--muted)">Demo PINs: Alice 1234, Bob 4321, Carol 1111, Dave 2222</small>
+      <label for="pin">PIN (unlocks this phone's signing key)</label><input id="pin" type="password" value="1234" autocomplete="off">
+      <button id="go">Proceed for payment</button>
+      <div id="err" role="alert"></div>
+      <span class="hint">Demo PINs are filled in for you. A real wallet never shows them.</span>
     </section>
-    <section class="steps">
-      <h2>Move it along</h2>
-      <button class="secondary" id="gossip">Run a gossip round<small>Every phone shares with every phone in range</small></button>
-      <button class="secondary" id="flush">Bridges upload<small>Both 4G phones post at the same moment</small></button>
-      <button class="secondary" id="reset">Reset the mesh<small>Clears phones and the dedupe cache</small></button>
+    <section id="balancesBox">
+      <h2>Account balances</h2><table id="accounts"></table>
     </section>
   </div>
+
   <div class="stack">
-    <section><h2>The mesh</h2><svg id="graph" viewBox="0 0 700 300" role="img" aria-label="Phones in the mesh and the packets each holds"></svg></section>
-    <section><h2>Activity</h2><pre id="log"><span class="empty">Nothing yet. Send a payment to begin.</span></pre></section>
-    <div class="two">
-      <section><h2>Account balances</h2><table id="accounts"></table></section>
-      <section><h2>Ledger</h2><table id="ledger"></table></section>
-    </div>
+    <section id="sceneWrap">
+      <div id="sceneBox"><svg id="scene" viewBox="0 0 800 420" role="img" aria-label="Animated scene: people with and without signal pass an encrypted payment between phones until it reaches the bank server">
+        <g id="bands"></g><g id="edges"></g><g id="people"></g><g id="fx"></g>
+      </svg></div>
+      <ol id="steps">
+        <li><span class="n">1</span>Sign and lock the payment</li>
+        <li><span class="n">2</span>Pass it between phones</li>
+        <li><span class="n">3</span>A phone reaches 4G</li>
+        <li><span class="n">4</span>Bank settles it once</li>
+      </ol>
+      <p id="caption" aria-live="polite">Pick who pays whom, then press Proceed for payment.</p>
+      <div id="result" hidden></div>
+      <details><summary>Technical trace</summary><pre id="trace"><span class="empty">Nothing yet.</span></pre></details>
+      <details><summary>Manual controls (advanced)</summary>
+        <button class="secondary" id="mSend">Step 1: Proceed for payment (stay on the sender's phone)</button>
+        <button class="secondary" id="mGossip">Step 2: Run one gossip round</button>
+        <button class="secondary" id="mFlush">Step 3: Bridges upload</button>
+        <button class="secondary" id="mReset">Reset the mesh</button>
+      </details>
+    </section>
+    <section id="ledgerBox"><h2>Ledger</h2><table id="ledger"></table></section>
   </div>
 </main>
 <script>
 const $=id=>document.getElementById(id);
+const NS='http://www.w3.org/2000/svg';
+const el=(tag,attrs={},parent)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e};
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const T=ms=>reduce?0:ms;
+const sleep=ms=>new Promise(r=>setTimeout(r,T(ms)));
 const inr=p=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR'}).format(p/100);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const DEMO_PINS={'alice@demo':'1234','bob@demo':'4321','carol@demo':'1111','dave@demo':'2222'};
 const api=async(path,method='GET',body)=>{
   const r=await fetch('/api/'+path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
   const data=await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(data.detail?(typeof data.detail==='string'?data.detail:'invalid input'):r.statusText);
+  if(!r.ok) throw new Error(data.detail?(typeof data.detail==='string'?data.detail:'Check the amount and try again.'):r.statusText);
   return data;
 };
-const log=(msg)=>{const el=$('log');if(el.querySelector('.empty'))el.textContent='';el.textContent+=msg+'\n';el.scrollTop=el.scrollHeight};
-const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const trace=(msg)=>{const p=$('trace');if(p.querySelector('.empty'))p.textContent='';p.textContent+=msg+'\n';p.scrollTop=p.scrollHeight};
 
-function drawMesh(devices){
-  const cx=350,cy=150,rx=250,ry=105,pos=devices.map((_,i)=>{const a=-Math.PI/2+i*2*Math.PI/devices.length;return[cx+rx*Math.cos(a),cy+ry*Math.sin(a)]});
-  let svg='';
-  pos.forEach((a,i)=>pos.forEach((b,j)=>{if(j>i)svg+=`<line class="edge" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/>`}));
-  devices.forEach((d,i)=>{const[x,y]=pos[i];
-    svg+=`<g class="node ${d.has_internet?'bridge':''} ${d.packet_count?'holding':''}">
-      ${d.has_internet?`<circle class="ring" cx="${x}" cy="${y}" r="31"/>`:''}
-      <circle class="body" cx="${x}" cy="${y}" r="24"/>
-      <text class="count" x="${x}" y="${y+5}">${d.packet_count}</text>
-      <text x="${x}" y="${y+48}">${esc(d.device_id.replace('phone-',''))}</text>
-      <text class="sub" x="${x}" y="${y+62}">${d.has_internet?'has 4G':'offline'}</text></g>`});
-  $('graph').innerHTML=svg;
+/* ---------- scene ---------- */
+let pos={},nodes={},edgeEls={},built=false,originId='phone-alice',accountsCache=[];
+const SERVER={x:715,y:215};
+const nameOf=id=>id===originId?(accountsCache.find(a=>a.vpa===$('sender').value)?.name||'Sender'):
+  ({'phone-bridge':'Bridge 1','phone-bridge-2':'Bridge 2'}[id]||'Stranger');
+
+function buildScene(devices){
+  ['bands','edges','people','fx'].forEach(i=>$(i).innerHTML='');
+  const b=$('bands');
+  el('rect',{x:0,y:0,width:390,height:420,style:'fill:var(--basement)'},b);
+  el('rect',{x:390,y:0,width:240,height:420,style:'fill:var(--street)'},b);
+  el('rect',{x:630,y:0,width:170,height:420,style:'fill:var(--bank)'},b);
+  [[0,165],[265,420]].forEach(([y1,y2])=>el('line',{x1:390,y1,x2:390,y2,stroke:'#172430','stroke-width':4},b));
+  [['Basement: no signal',16],['Street: 4G',406],['Bank',646]].forEach(([t,x])=>{const n=el('text',{x,y:30,class:'zone'},b);n.textContent=t});
+  const off=devices.filter(d=>!d.has_internet),on=devices.filter(d=>d.has_internet);
+  const OFF=[[85,215],[225,110],[225,325],[320,215],[110,350],[110,95]];
+  pos={};
+  off.forEach((d,i)=>{const [x,y]=OFF[i%OFF.length];pos[d.device_id]={x,y}});
+  on.forEach((d,i)=>pos[d.device_id]={x:520,y:on.length===1?215:95+i*(205/(on.length-1))});
+  // faint mesh edges between every pair of phones
+  const ids=devices.map(d=>d.device_id);edgeEls={};
+  ids.forEach((a,i)=>ids.slice(i+1).forEach(c=>{
+    edgeEls[[a,c].sort().join('|')]=el('line',{class:'edge',x1:pos[a].x,y1:pos[a].y,x2:pos[c].x,y2:pos[c].y},$('edges'))}));
+  // internet links from bridges to the bank
+  on.forEach(d=>{const p=pos[d.device_id];
+    el('line',{x1:p.x+22,y1:p.y,x2:SERVER.x-34,y2:SERVER.y,stroke:'#566774','stroke-width':1.5,'stroke-dasharray':'2 5'},$('edges'))});
+  const lbl=el('text',{x:612,y:208,class:'sub'},$('edges'));lbl.textContent='internet';
+  nodes={};devices.forEach(d=>drawPerson(d));
+  drawServer();built=true;
 }
+
+function drawPerson(d){
+  const {x,y}=pos[d.device_id],g=el('g',{transform:`translate(${x},${y})`},$('people')),net=d.has_internet;
+  const tone=net?'#172430':'#51606d';
+  el('ellipse',{cx:0,cy:30,rx:22,ry:5,fill:'#172430',opacity:.12},g);
+  el('path',{d:'M-17 28 q0 -24 17 -24 q17 0 17 24 z',fill:tone},g);
+  el('circle',{cx:0,cy:-13,r:10.5,fill:tone},g);
+  const phone=el('rect',{x:13,y:-2,width:10,height:16,rx:2.2,fill:'#fff',stroke:'#172430','stroke-width':1.4},g);
+  // signal bars (+ slash when there is no signal)
+  const sg=el('g',{transform:'translate(-34,-32)'},g);
+  [4,8,12].forEach((h,i)=>el('rect',{x:i*6,y:12-h,width:4,height:h,rx:1,fill:net?'#1f6f5c':'#9aa8b5'},sg));
+  if(!net)el('line',{x1:-2,y1:14,x2:20,y2:-2,stroke:'#a82b3a','stroke-width':2,'stroke-linecap':'round'},sg);
+  const ring=el('circle',{cx:0,cy:8,r:24,fill:'none',stroke:'#2c3fb5','stroke-width':2,opacity:0},g);
+  const lock=el('g',{transform:'translate(0,-38)',style:'display:none',class:'lockbadge'},g);
+  el('circle',{r:10,fill:'#2c3fb5'},lock);
+  el('rect',{x:-4.5,y:-1,width:9,height:7,rx:1.5,fill:'#fff'},lock);
+  el('path',{d:'M-2.8 -1 v-2.5 a2.8 2.8 0 0 1 5.6 0 v2.5',fill:'none',stroke:'#fff','stroke-width':1.5},lock);
+  const nm=el('text',{y:48,class:'name'},g),sb=el('text',{y:62,class:'sub'},g);
+  sb.textContent=net?'has 4G':'no signal';
+  nodes[d.device_id]={g,phone,ring,lock,nm,sb,net,holding:false};
+  nm.textContent=nameOf(d.device_id);
+}
+
+function drawServer(){
+  const g=el('g',{transform:`translate(${SERVER.x},${SERVER.y})`},$('people'));
+  el('path',{d:'M-34 -10 L0 -36 L34 -10 Z',fill:'#172430'},g);
+  el('rect',{x:-34,y:-8,width:68,height:5,fill:'#172430'},g);
+  [-26,-9,8,25].forEach(x=>el('rect',{x:x-3,y:-2,width:7,height:30,fill:'#566774'},g));
+  el('rect',{x:-38,y:30,width:76,height:6,fill:'#172430'},g);
+  const ring=el('circle',{cx:0,cy:0,r:24,fill:'none',stroke:'#2c3fb5','stroke-width':2,opacity:0},g);
+  const nm=el('text',{y:56,class:'name'},g);nm.textContent='Bank server';
+  nodes.server={g,ring,sub:el('text',{y:72,class:'sub'},g),extra:el('text',{y:88,class:'sub'},g)};
+}
+
+function setHolding(id,on){
+  const n=nodes[id];if(!n||n.holding===on)return;n.holding=on;
+  n.phone.setAttribute('fill',on?'#2c3fb5':'#fff');
+  n.lock.style.display=on?'':'none';
+  if(on){n.lock.classList.remove('pop');void n.lock.getBoundingClientRect();n.lock.classList.add('pop')}
+}
+function pulse(id){const r=nodes[id]?.ring;if(!r||reduce)return;r.classList.remove('ping');void r.getBoundingClientRect();r.classList.add('ping')}
+function lightEdge(a,c){const e=edgeEls[[a,c].sort().join('|')];if(!e)return;
+  e.style.stroke='#2c3fb5';e.style.strokeWidth='2.6';e.style.opacity='1';
+  setTimeout(()=>{e.style.stroke='';e.style.strokeWidth='';e.style.opacity=''},T(1100))}
+
+function token(){const g=el('g',{},$('fx'));
+  el('rect',{x:-13,y:-9,width:26,height:18,rx:3,fill:'#2c3fb5',stroke:'#fff','stroke-width':1.5},g);
+  el('path',{d:'M-13 -8 L0 2 L13 -8',fill:'none',stroke:'#fff','stroke-width':1.6},g);return g}
+
+function fly(a,b,ms){
+  if(reduce||ms===0)return Promise.resolve();
+  return new Promise(res=>{
+    const g=token(),t0=performance.now(),ox=0,oy=-26;
+    const step=now=>{let k=Math.min(1,(now-t0)/ms);const e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+      g.setAttribute('transform',`translate(${a.x+ox+(b.x-a.x)*e},${a.y+oy+(b.y-a.y)*e-Math.sin(Math.PI*e)*20})`);
+      if(k<1)requestAnimationFrame(step);else{g.remove();res()}};
+    requestAnimationFrame(step)});
+}
+
+function badge(id,text,tone){
+  const p=pos[id],w=text.length*6.4+18,g=el('g',{transform:`translate(${p.x},${p.y+82})`,class:'lockbadge pop'},$('fx'));
+  el('rect',{x:-w/2,y:-11,width:w,height:22,rx:11,style:`fill:#fff;stroke:var(--${tone});stroke-width:1.5`},g);
+  const t=el('text',{y:4,class:'sub',style:`fill:var(--${tone});font-weight:700;font-size:12px`},g);t.textContent=text;
+}
+
+/* ---------- steps ---------- */
+function setStep(n,text){
+  document.querySelectorAll('#steps li').forEach((li,i)=>{li.classList.toggle('done',i<n-1);li.classList.toggle('active',i===n-1)});
+  if(text)$('caption').textContent=text;
+}
+const allDone=()=>document.querySelectorAll('#steps li').forEach(li=>{li.classList.remove('active');li.classList.add('done')});
+const resetSteps=()=>document.querySelectorAll('#steps li').forEach(li=>li.classList.remove('active','done'));
+function clearScene(){$('fx').innerHTML='';Object.keys(nodes).forEach(id=>{if(id!=='server')setHolding(id,false)});
+  nodes.server.sub.textContent='';nodes.server.extra.textContent='';}
+
+const OUT={SETTLED:['Settled','ok'],DUPLICATE_DROPPED:['Duplicate, ignored','warn'],INVALID:['Refused','bad'],REJECTED:['Rejected','bad'],ERROR:['Error','bad']};
+
+/* ---------- one-click payment ---------- */
+let busy=false;
+async function pay(){
+  if(busy)return;busy=true;$('go').disabled=true;$('go').textContent='Payment in progress...';
+  $('err').textContent='';$('result').hidden=true;clearScene();
+  const body={sender:$('sender').value,receiver:$('receiver').value,amount:$('amount').value,pin:$('pin').value};
+  const who=nameOf(originId),toName=accountsCache.find(a=>a.vpa===body.receiver)?.name||body.receiver;
+  try{
+    setStep(1,`${who} unlocks the signing key with a PIN, signs the payment, and locks it so nobody carrying it can read or change it.`);
+    let t;
+    try{[t]=await Promise.all([api('pay','POST',body),sleep(1100)])}
+    catch(e){$('err').textContent=e.message;resetSteps();$('caption').textContent='Nothing was sent. Fix the problem above and try again.';return}
+    originId=t.origin;setHolding(originId,true);pulse(originId);
+    $('trace').textContent='';trace(`packet ${t.packet_id.slice(0,8)} created on ${t.origin}`);
+
+    setStep(2,'There is no signal here, so phones pass the locked payment to whoever is in range.');
+    let k=0;
+    for(const round of t.rounds){k++;
+      trace(`hop ${k}: ${round.length} copies moved`);
+      await Promise.all(round.map((x,i)=>sleep(i*90).then(()=>{lightEdge(x.from,x.to);return fly(pos[x.from],pos[x.to],750)})
+        .then(()=>{setHolding(x.to,true);pulse(x.to)})));
+      await sleep(300);
+    }
+    const bridges=t.devices.filter(d=>d.has_internet).map(d=>d.device_id);
+    setStep(3,`${bridges.length} of these phones reach 4G. Each one carries a copy and is about to upload it.`);
+    bridges.forEach(pulse);await sleep(900);
+
+    setStep(4,bridges.length>1?'Both bridges upload at the same instant. The bank lets only one copy through.':'The bridge uploads the payment. The bank checks and settles it.');
+    t.uploads.forEach(u=>setHolding(u.bridge,false));
+    await Promise.all(t.uploads.map(u=>fly(pos[u.bridge],SERVER,1150)));
+    pulse('server');await sleep(250);
+    t.uploads.forEach(u=>{const [txt,tone]=OUT[u.outcome]||['Error','bad'];badge(u.bridge,txt,tone);
+      trace(`${u.bridge}: ${u.outcome}${u.reason?' ('+u.reason+')':''}${u.packet_hash?' hash '+u.packet_hash.slice(0,12):''}`)});
+    const ok=t.result==='SETTLED',dups=t.uploads.filter(u=>u.outcome==='DUPLICATE_DROPPED').length;
+    nodes.server.sub.textContent=ok?'Paid once':'Not paid';
+    nodes.server.sub.style.fill=ok?'#1f6f5c':'#a82b3a';nodes.server.sub.style.fontWeight='700';
+    nodes.server.extra.textContent=ok?`${toName} +${inr(Math.round(parseFloat(body.amount)*100))}`:'';
+    const res=$('result');res.hidden=false;res.classList.toggle('bad',!ok);
+    res.textContent=ok
+      ?`${inr(Math.round(parseFloat(body.amount)*100))} moved from ${who} to ${toName}.`+(dups?` ${dups+1} phones uploaded it, and the bank settled it once.`:'')
+      :`Not settled${t.reason?': '+t.reason:''}. No money moved.`;
+    if(ok)allDone();else document.querySelectorAll('#steps li').forEach((li,i)=>{li.classList.toggle('done',i<3);li.classList.remove('active')});
+    $('caption').textContent=ok?'Done. Press Proceed for payment to run it again.':'The bank refused this payment. Change the details and try again.';
+    await refresh();
+  }catch(e){$('err').textContent=e.message}
+  finally{busy=false;$('go').disabled=false;$('go').textContent='Proceed for payment'}
+}
+
+/* ---------- data panels ---------- */
 async function refresh(){
   const [mesh,acc,tx]=await Promise.all([api('mesh/state'),api('accounts'),api('transactions')]);
-  drawMesh(mesh);
-  $('accounts').innerHTML='<tr><th>Account</th><th class="num" style="text-align:right">Balance</th></tr>'+
+  accountsCache=acc;
+  if(!$('sender').options.length){
+    $('sender').innerHTML=$('receiver').innerHTML=acc.map(a=>`<option value="${esc(a.vpa)}">${esc(a.name)}</option>`).join('');
+    $('receiver').selectedIndex=1;$('pin').value=DEMO_PINS[$('sender').value]||'';
+  }
+  if(!built){originId=mesh[0].device_id;buildScene(mesh)}
+  if(!busy)mesh.forEach(d=>setHolding(d.device_id,d.packet_count>0));
+  nodes[originId].nm.textContent=nameOf(originId);
+  $('accounts').innerHTML='<tr><th>Account</th><th style="text-align:right">Balance</th></tr>'+
     acc.map(a=>`<tr><td>${esc(a.name)}<br><small style="color:var(--muted)">${esc(a.vpa)}</small></td><td class="num">${inr(a.balance_paise)}</td></tr>`).join('');
   $('ledger').innerHTML=tx.length?'<tr><th>Payment</th><th>Status</th></tr>'+tx.map(t=>
     `<tr><td>${esc(t.sender.split('@')[0])} to ${esc(t.receiver.split('@')[0])}<br><small style="color:var(--muted)">${inr(t.amount_paise)} via ${esc(t.bridge||'-')}</small></td>
      <td><span class="pill ${t.status}">${t.status.toLowerCase()}</span>${t.reason?`<br><small>${esc(t.reason)}</small>`:''}</td></tr>`).join('')
-    :'<tr><td class="empty">No settled payments yet.</td></tr>';
-  if(!$('sender').options.length){
-    $('sender').innerHTML=$('receiver').innerHTML=acc.map(a=>`<option value="${esc(a.vpa)}">${esc(a.name)}</option>`).join('');
-    $('receiver').selectedIndex=1;
-  }
+    :'<tr><td class="empty">No payments yet.</td></tr>';
 }
-const act=(id,fn)=>$(id).addEventListener('click',async()=>{try{await fn()}catch(e){log('Error: '+e.message)}await refresh()});
-act('send',async()=>{
-  const r=await api('demo/send','POST',{sender:$('sender').value,receiver:$('receiver').value,amount:$('amount').value,pin:$('pin').value});
-  log(`Encrypted and signed on the sender's phone. Packet ${r.packet_id.slice(0,8)} is on ${r.injected_into}.`)});
-act('gossip',async()=>{const r=await api('mesh/gossip','POST');log(`Gossip round: ${r.transfers} packet copies moved.`)});
-act('flush',async()=>{const r=await api('mesh/flush','POST');
-  if(!r.results.length)log('No bridge holds a packet yet. Run a gossip round first.');
-  r.results.forEach(x=>log(`${x.bridge}: ${x.outcome.toLowerCase().replace('_',' ')}${x.reason?' ('+x.reason+')':''}`))});
-act('reset',async()=>{await api('mesh/reset','POST');log('Mesh reset.')});
-refresh();
+
+$('go').addEventListener('click',pay);
+$('sender').addEventListener('change',()=>{$('pin').value=DEMO_PINS[$('sender').value]||'';if(nodes[originId])nodes[originId].nm.textContent=nameOf(originId)});
+const manual=(id,fn)=>$(id).addEventListener('click',async()=>{try{$('err').textContent='';await fn()}catch(e){$('err').textContent=e.message}await refresh()});
+manual('mSend',async()=>{const r=await api('demo/send','POST',{sender:$('sender').value,receiver:$('receiver').value,amount:$('amount').value,pin:$('pin').value});
+  trace(`packet ${r.packet_id.slice(0,8)} placed on ${r.injected_into}`)});
+manual('mGossip',async()=>{const r=await api('mesh/gossip','POST');trace(`gossip round: ${r.transfers} copies moved`)});
+manual('mFlush',async()=>{const r=await api('mesh/flush','POST');
+  if(!r.results.length)trace('no bridge holds a packet yet');
+  r.results.forEach(x=>trace(`${x.bridge}: ${x.outcome}${x.reason?' ('+x.reason+')':''}`))});
+manual('mReset',async()=>{await api('mesh/reset','POST');clearScene();trace('mesh reset')});
+refresh().catch(e=>{$('err').textContent='Could not reach the server: '+e.message});
 </script>
 </body>
 </html>
