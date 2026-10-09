@@ -1,5 +1,6 @@
 # UPI Offline Mesh (Python)
 ![Dashboard](docs/Dashboard.png)
+Live Demo: https://upi-offline-mesh-80hu.onrender.com
 Offline UPI-style payments routed through a phone-to-phone mesh, settled exactly once by a FastAPI backend.
 
 You're in a basement with no signal. Your phone signs and encrypts a payment, hands it to nearby phones, and the packet hops device to device until one of them reaches 4G and uploads it. The server decrypts, verifies, deduplicates and settles. A software simulator of the mesh lets you demo the whole flow on one laptop.
