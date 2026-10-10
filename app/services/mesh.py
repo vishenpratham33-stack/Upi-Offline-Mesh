@@ -22,7 +22,7 @@ class VirtualDevice:
 
 class MeshSimulator:
     DEFAULT_DEVICES = (
-        ("phone-alice", False),
+        ("phone-sender", False),
         ("phone-stranger1", False),
         ("phone-stranger2", False),
         ("phone-bridge", True),

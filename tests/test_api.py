@@ -1,5 +1,5 @@
 def _send(client, **over):
-    body = {"sender": "alice@demo", "receiver": "bob@demo", "amount": "500.00", "pin": "1234"}
+    body = {"sender": "abhishek@demo", "receiver": "mridul@demo", "amount": "500.00", "pin": "1234"}
     return client.post("/api/demo/send", json={**body, **over})
 
 
@@ -9,7 +9,7 @@ def _balances(client):
 
 def test_full_demo_flow_with_two_bridges(client):
     assert _send(client).status_code == 200
-    assert client.post("/api/mesh/gossip").json()["transfers"] == 4  # alice -> 4 other phones
+    assert client.post("/api/mesh/gossip").json()["transfers"] == 4  # the sender's phone -> the 4 other phones
     assert client.post("/api/mesh/gossip").json()["transfers"] == 0  # already everywhere
     state = client.get("/api/mesh/state").json()
     assert all(d["packet_count"] == 1 for d in state)  # everyone holds it
@@ -19,7 +19,7 @@ def test_full_demo_flow_with_two_bridges(client):
     assert outcomes == ["DUPLICATE_DROPPED", "SETTLED"]  # 2 bridges, settled once
 
     b = _balances(client)
-    assert b["alice@demo"] == 100_000_00 - 500_00 and b["bob@demo"] == 50_000_00 + 500_00
+    assert b["abhishek@demo"] == 27_00_000_00 - 500_00 and b["mridul@demo"] == 22_00_000_00 + 500_00
     assert client.get("/api/transactions").json()[0]["status"] == "SETTLED"
     assert client.get("/api/metrics").json()["outcomes"]["SETTLED"] == 1
 
@@ -86,7 +86,7 @@ def test_server_key_and_dashboard(client):
 
 
 def _pay(client, **over):
-    body = {"sender": "alice@demo", "receiver": "bob@demo", "amount": "500.00", "pin": "1234"}
+    body = {"sender": "abhishek@demo", "receiver": "mridul@demo", "amount": "500.00", "pin": "1234"}
     return client.post("/api/pay", json={**body, **over})
 
 
@@ -94,24 +94,26 @@ def test_pay_runs_whole_flow_in_one_call(client):
     r = _pay(client)
     assert r.status_code == 200
     t = r.json()
-    assert t["result"] == "SETTLED" and t["origin"] == "phone-alice"
-    assert len(t["rounds"][0]) == 4                       # alice -> the other 4 phones
+    assert t["result"] == "SETTLED" and t["origin"] == "phone-sender"
+    assert len(t["rounds"][0]) == 4                       # the sender's phone -> the other 4 phones
     assert sorted(u["outcome"] for u in t["uploads"]) == ["DUPLICATE_DROPPED", "SETTLED"]
     assert {d["device_id"] for d in t["devices"] if d["has_internet"]} == {"phone-bridge", "phone-bridge-2"}
     b = _balances(client)
-    assert b["alice@demo"] == 100_000_00 - 500_00 and b["bob@demo"] == 50_000_00 + 500_00
+    assert b["abhishek@demo"] == 27_00_000_00 - 500_00 and b["mridul@demo"] == 22_00_000_00 + 500_00
 
 
 def test_pay_twice_settles_twice(client):
     assert _pay(client).json()["result"] == "SETTLED"
     assert _pay(client).json()["result"] == "SETTLED"
-    assert _balances(client)["alice@demo"] == 100_000_00 - 1000_00
+    assert _balances(client)["abhishek@demo"] == 27_00_000_00 - 1000_00
 
 
 def test_pay_reports_rejection_with_reason(client):
+    from tests.conftest import set_balance
+    set_balance(client.app.state.container, "tanupriya@demo", 10_000_00)  # Rs 10,000
     for _ in range(2):
-        assert _pay(client, sender="dave@demo", pin="2222", amount="5000").json()["result"] == "SETTLED"
-    t = _pay(client, sender="dave@demo", pin="2222", amount="5000").json()
+        assert _pay(client, sender="tanupriya@demo", pin="2222", amount="5000").json()["result"] == "SETTLED"
+    t = _pay(client, sender="tanupriya@demo", pin="2222", amount="5000").json()
     assert t["result"] == "REJECTED" and t["reason"] == "insufficient funds"
 
 
@@ -126,4 +128,29 @@ def test_pay_concurrent_visitors_do_not_corrupt_each_other(client):
     with ThreadPoolExecutor(4) as pool:
         results = list(pool.map(lambda _: _pay(client).json()["result"], range(4)))
     assert results == ["SETTLED"] * 4
-    assert _balances(client)["alice@demo"] == 100_000_00 - 4 * 500_00
+    assert _balances(client)["abhishek@demo"] == 27_00_000_00 - 4 * 500_00
+
+
+def test_demo_accounts_names_and_balances(client):
+    got = {a["name"]: a["balance_paise"] for a in client.get("/api/accounts").json()}
+    assert got == {"Abhishek": 27_00_000_00, "Mridul": 22_00_000_00,
+                   "Mika": 50_00_000_00, "Tanupriya": 35_00_000_00}
+
+
+def test_pay_one_lakh_works_and_over_one_lakh_is_refused(client):
+    ok = _pay(client, amount="100000").json()
+    assert ok["result"] == "SETTLED"
+    over = _pay(client, amount="100000.01").json()
+    assert over["result"] == "INVALID" and "limit" in over["reason"]
+
+
+def test_legacy_demo_accounts_are_removed_on_start(settings):
+    from app.container import build_container
+    from app.models import Account
+    c1 = build_container(settings)
+    with c1.session_factory() as s, s.begin():
+        s.add(Account(vpa="alice@demo", name="Alice", balance_paise=1, device_public_key="x"))
+    c2 = build_container(settings)  # same DB file, simulates restart with an old database
+    with c2.session_factory() as s:
+        vpas = {a.vpa for a in s.query(Account)}
+    assert "alice@demo" not in vpas and "abhishek@demo" in vpas

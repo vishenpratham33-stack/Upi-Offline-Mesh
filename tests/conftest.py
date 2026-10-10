@@ -25,7 +25,7 @@ def client(settings):
         yield c
 
 
-def make_packet(container: Container, sender="alice@demo", receiver="bob@demo", rupees=500,
+def make_packet(container: Container, sender="abhishek@demo", receiver="mridul@demo", rupees=500,
                 pin="1234", **kw) -> MeshPacket:
     wallet = container.demo.wallets[sender]
     return wallet.create_packet(container.keys.public_key, receiver, rupees * 100, pin,
@@ -43,3 +43,10 @@ def flip_byte(packet: MeshPacket, index: int) -> MeshPacket:
     raw = bytearray(base64.b64decode(packet.ciphertext))
     raw[index] ^= 0x01
     return packet.model_copy(update={"ciphertext": base64.b64encode(bytes(raw)).decode()})
+
+
+def set_balance(container: Container, vpa: str, paise: int) -> None:
+    from sqlalchemy import update
+    from app.models import Account
+    with container.session_factory() as s, s.begin():
+        s.execute(update(Account).where(Account.vpa == vpa).values(balance_paise=paise))

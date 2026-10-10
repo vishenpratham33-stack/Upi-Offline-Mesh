@@ -50,4 +50,4 @@ class SendRequest(BaseModel):
     receiver: str
     amount: Decimal = Field(gt=0, max_digits=10, decimal_places=2, description="Rupees")
     pin: str = Field(min_length=4, max_length=8)
-    device_id: str = "phone-alice"
+    device_id: str = "phone-sender"

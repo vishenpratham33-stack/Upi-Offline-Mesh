@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     max_packet_age_seconds: int = 24 * 3600
     max_clock_skew_seconds: int = 120
     idempotency_ttl_seconds: int = 24 * 3600
-    max_txn_paise: int = 500_000  # ₹5,000 per offline transaction
+    max_txn_paise: int = 10_000_000  # Rs 1,00,000 per offline transaction (demo value)
     bridge_rate_limit_per_minute: int = 600
     eviction_interval_seconds: int = 60
     seed_demo_data: bool = True

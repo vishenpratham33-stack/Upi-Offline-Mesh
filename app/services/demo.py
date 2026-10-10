@@ -1,7 +1,7 @@
 """Seeds demo accounts and plays the role of the sender's phone."""
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.crypto.keys import ServerKeyHolder
@@ -10,11 +10,13 @@ from app.schemas import MeshPacket, SendRequest
 from app.sender import SenderWallet, WrongPin
 
 SEED = (
-    ("alice@demo", "Alice", 100_000_00, "1234"),
-    ("bob@demo", "Bob", 50_000_00, "4321"),
-    ("carol@demo", "Carol", 25_000_00, "1111"),
-    ("dave@demo", "Dave", 10_000_00, "2222"),
+    ("abhishek@demo", "Abhishek", 27_00_000_00, "1234"),   # Rs 27,00,000
+    ("mridul@demo", "Mridul", 22_00_000_00, "4321"),       # Rs 22,00,000
+    ("mika@demo", "Mika", 50_00_000_00, "1111"),           # Rs 50,00,000
+    ("tanupriya@demo", "Tanupriya", 35_00_000_00, "2222"),  # Rs 35,00,000
 )
+# Accounts from earlier demo versions; removed on start so they don't clutter the dropdowns.
+LEGACY_VPAS = ("alice@demo", "bob@demo", "carol@demo", "dave@demo")
 
 
 class DemoService:
@@ -24,6 +26,7 @@ class DemoService:
 
     def seed(self) -> None:
         with self._sf() as s, s.begin():
+            s.execute(delete(Account).where(Account.vpa.in_(LEGACY_VPAS)))
             for vpa, name, paise, pin in SEED:
                 wallet = SenderWallet.create(vpa, pin)
                 self.wallets[vpa] = wallet
