@@ -1,6 +1,7 @@
 # UPI Offline Mesh (Python)
 ![CI](https://github.com/vishenpratham33-stack/Upi-Offline-Mesh/actions/workflows/ci.yml/badge.svg)
-   ![Dashboard](docs/dashboard.upi.png)
+
+   ![Dashboard](docs/dashboard.mesh.png)
 
    **Live demo:** https://upi-offline-mesh-80hu.onrender.com
 
