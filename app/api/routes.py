@@ -98,7 +98,9 @@ def pay(body: SendRequest, request: Request):
 
 @router.post("/mesh/gossip")
 def gossip(request: Request):
-    return {"transfers": _c(request).mesh.gossip_round()}
+    """One gossip round. `moves` lists every hop (from, to, ttl) so the UI can animate it."""
+    moves = _c(request).mesh.gossip_round_detailed()
+    return {"transfers": len(moves), "moves": moves}
 
 
 @router.post("/mesh/flush")

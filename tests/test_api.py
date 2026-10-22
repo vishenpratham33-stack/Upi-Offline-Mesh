@@ -154,3 +154,12 @@ def test_legacy_demo_accounts_are_removed_on_start(settings):
     with c2.session_factory() as s:
         vpas = {a.vpa for a in s.query(Account)}
     assert "alice@demo" not in vpas and "abhishek@demo" in vpas
+
+
+def test_manual_gossip_returns_moves_for_animation(client):
+    _send(client)
+    r = client.post("/api/mesh/gossip").json()
+    assert r["transfers"] == 4 and len(r["moves"]) == 4
+    assert {m["from"] for m in r["moves"]} == {"phone-sender"}
+    assert all({"from", "to", "ttl"} <= m.keys() for m in r["moves"])
+    assert client.post("/api/mesh/gossip").json()["moves"] == []   # nothing left to spread

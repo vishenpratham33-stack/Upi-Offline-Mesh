@@ -67,6 +67,7 @@ ol#steps{display:flex;list-style:none;margin:14px 6px 0;padding:0;gap:6px}
 .tick path{fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:24;stroke-dashoffset:24;animation:draw .45s .25s ease-out forwards}
 @keyframes draw{to{stroke-dashoffset:0}}
 #result{display:flex;gap:10px;align-items:center}
+#result[hidden]{display:none}
 @media(prefers-reduced-motion:reduce){.tick,.tick path{animation:none}.tick path{stroke-dashoffset:0}.balloon{display:none}}
 /* tables */
 table{width:100%;border-collapse:collapse;font-size:14px}
@@ -303,13 +304,56 @@ function bankTick(){const g=el('g',{transform:`translate(${SERVER.x+38},${SERVER
   el('circle',{r:12,fill:'#1f6f5c',stroke:'#fff','stroke-width':2},g);
   el('path',{d:'M-5.5 0.5 l3.6 3.6 l7.4 -8','fill':'none',stroke:'#fff','stroke-width':2.6,'stroke-linecap':'round','stroke-linejoin':'round'},g)}
 
+/* ---------- shared animation steps (one-click AND manual mode use the same ones) ---------- */
+let busy=false,manualInfo=null,manualHops=0;
+const ACTION_BTNS=['go','mSend','mGossip','mFlush','mReset'];
+function setBusy(on){busy=on;ACTION_BTNS.forEach(id=>{$(id).disabled=on})}
+const paise=a=>Math.round(parseFloat(a)*100);
+const PRIORITY=['SETTLED','REJECTED','INVALID','ERROR','DUPLICATE_DROPPED'];
+const headline=ups=>{const seen=new Set(ups.map(u=>u.outcome));return PRIORITY.find(o=>seen.has(o))||'NOT_DELIVERED'};
+
+async function playHop(round,k){
+  trace(`hop ${k}: ${round.length} copies moved`);
+  await Promise.all(round.map((x,i)=>sleep(i*90).then(()=>{lightEdge(x.from,x.to);return fly(pos[x.from],pos[x.to],750)})
+    .then(()=>{setHolding(x.to,true);pulse(x.to)})));
+  await sleep(300);
+}
+
+async function playUpload(uploads,result,reason,info){
+  const bridges=Object.keys(nodes).filter(id=>id!=='server'&&nodes[id].net);
+  setStep(3,`${bridges.length} of these phones reach 4G. Each one carries a copy and is about to upload it.`);
+  bridges.forEach(pulse);await sleep(900);
+  const many=new Set(uploads.map(u=>u.bridge)).size>1;
+  setStep(4,many?'Both bridges upload at the same instant. The bank lets only one copy through.':'The bridge uploads the payment. The bank checks and settles it.');
+  uploads.forEach(u=>setHolding(u.bridge,false));
+  await Promise.all(uploads.map(u=>fly(pos[u.bridge],SERVER,1150)));
+  pulse('server');await sleep(250);
+  const byBridge={};uploads.forEach(u=>(byBridge[u.bridge]??=[]).push(u));   // one badge per bridge
+  Object.entries(byBridge).forEach(([id,list])=>{
+    if(list.length===1){const [txt,tone]=OUT[list[0].outcome]||['Error','bad'];badge(id,txt,tone)}
+    else badge(id,`${list.length} uploads`,list.some(u=>u.outcome==='SETTLED')?'ok':'warn')});
+  uploads.forEach(u=>trace(`${u.bridge}: ${u.outcome}${u.reason?' ('+u.reason+')':''}${u.packet_hash?' hash '+u.packet_hash.slice(0,12):''}`));
+  const ok=result==='SETTLED',dups=uploads.filter(u=>u.outcome==='DUPLICATE_DROPPED').length;
+  nodes.server.sub.textContent=ok?'Paid once':'Not paid';
+  nodes.server.sub.style.fill=ok?'#1f6f5c':'#a82b3a';nodes.server.sub.style.fontWeight='700';
+  nodes.server.extra.textContent=ok&&info?`${info.toName} +${inr(info.paise)}`:'';
+  const res=$('result');res.hidden=false;res.classList.toggle('bad',!ok);
+  let msg;
+  if(ok)msg=info?`${inr(info.paise)} moved from ${info.who} to ${info.toName}.`+(dups?` ${dups+1} phones uploaded it, and the bank settled it once.`:''):'The bank settled the payment once.';
+  else if(result==='DUPLICATE_DROPPED')msg='That payment was already settled earlier, so the bank ignored the duplicate.';
+  else msg=`Not settled${reason?': '+reason:''}. No money moved.`;
+  res.innerHTML=(ok?TICK:'')+'<span>'+esc(msg)+'</span>';
+  if(ok){bankTick();celebrate();allDone()}
+  else document.querySelectorAll('#steps li').forEach((li,i)=>{li.classList.toggle('done',i<3);li.classList.remove('active')});
+  $('caption').textContent=ok?'Done. Press Proceed for payment to run it again.':'The bank did not settle this payment. Change the details and try again.';
+}
+
 /* ---------- one-click payment ---------- */
-let busy=false;
 async function pay(){
-  if(busy)return;busy=true;$('go').disabled=true;$('go').textContent='Payment in progress...';
+  if(busy)return;setBusy(true);$('go').textContent='Payment in progress...';
   $('err').textContent='';$('result').hidden=true;clearScene();
   const body={sender:$('sender').value,receiver:$('receiver').value,amount:$('amount').value,pin:$('pin').value};
-  const who=nameOf(originId),toName=accountsCache.find(a=>a.vpa===body.receiver)?.name||body.receiver;
+  const who=nameOf(originId),toName=nameOfVpa(body.receiver);
   try{
     setStep(1,`${who} unlocks the signing key with a PIN, signs the payment, and locks it so nobody carrying it can read or change it.`);
     let t;
@@ -317,41 +361,12 @@ async function pay(){
     catch(e){$('err').textContent=e.message;resetSteps();$('caption').textContent='Nothing was sent. Fix the problem above and try again.';return}
     originId=t.origin;setHolding(originId,true);pulse(originId);
     $('trace').textContent='';trace(`packet ${t.packet_id.slice(0,8)} created on ${t.origin}`);
-
     setStep(2,'There is no signal here, so phones pass the locked payment to whoever is in range.');
-    let k=0;
-    for(const round of t.rounds){k++;
-      trace(`hop ${k}: ${round.length} copies moved`);
-      await Promise.all(round.map((x,i)=>sleep(i*90).then(()=>{lightEdge(x.from,x.to);return fly(pos[x.from],pos[x.to],750)})
-        .then(()=>{setHolding(x.to,true);pulse(x.to)})));
-      await sleep(300);
-    }
-    const bridges=t.devices.filter(d=>d.has_internet).map(d=>d.device_id);
-    setStep(3,`${bridges.length} of these phones reach 4G. Each one carries a copy and is about to upload it.`);
-    bridges.forEach(pulse);await sleep(900);
-
-    setStep(4,bridges.length>1?'Both bridges upload at the same instant. The bank lets only one copy through.':'The bridge uploads the payment. The bank checks and settles it.');
-    t.uploads.forEach(u=>setHolding(u.bridge,false));
-    await Promise.all(t.uploads.map(u=>fly(pos[u.bridge],SERVER,1150)));
-    pulse('server');await sleep(250);
-    t.uploads.forEach(u=>{const [txt,tone]=OUT[u.outcome]||['Error','bad'];badge(u.bridge,txt,tone);
-      trace(`${u.bridge}: ${u.outcome}${u.reason?' ('+u.reason+')':''}${u.packet_hash?' hash '+u.packet_hash.slice(0,12):''}`)});
-    const ok=t.result==='SETTLED',dups=t.uploads.filter(u=>u.outcome==='DUPLICATE_DROPPED').length;
-    nodes.server.sub.textContent=ok?'Paid once':'Not paid';
-    nodes.server.sub.style.fill=ok?'#1f6f5c':'#a82b3a';nodes.server.sub.style.fontWeight='700';
-    nodes.server.extra.textContent=ok?`${toName} +${inr(Math.round(parseFloat(body.amount)*100))}`:'';
-    const res=$('result');res.hidden=false;res.classList.toggle('bad',!ok);
-    const amt=inr(Math.round(parseFloat(body.amount)*100));
-    const msg=ok
-      ?`${amt} moved from ${who} to ${toName}.`+(dups?` ${dups+1} phones uploaded it, and the bank settled it once.`:'')
-      :`Not settled${t.reason?': '+t.reason:''}. No money moved.`;
-    res.innerHTML=(ok?TICK:'')+'<span>'+esc(msg)+'</span>';
-    if(ok){bankTick();celebrate()}
-    if(ok)allDone();else document.querySelectorAll('#steps li').forEach((li,i)=>{li.classList.toggle('done',i<3);li.classList.remove('active')});
-    $('caption').textContent=ok?'Done. Press Proceed for payment to run it again.':'The bank refused this payment. Change the details and try again.';
+    let k=0;for(const round of t.rounds)await playHop(round,++k);
+    await playUpload(t.uploads,t.result,t.reason,{who,toName,paise:paise(body.amount)});
     await refresh();
   }catch(e){$('err').textContent=e.message}
-  finally{busy=false;$('go').disabled=false;$('go').textContent='Proceed for payment'}
+  finally{setBusy(false);$('go').textContent='Proceed for payment'}
 }
 
 /* ---------- data panels ---------- */
@@ -375,14 +390,46 @@ async function refresh(){
 
 $('go').addEventListener('click',pay);
 $('sender').addEventListener('change',()=>{$('pin').value=DEMO_PINS[$('sender').value]||'';if(nodes[originId])nodes[originId].nm.textContent=nameOf(originId)});
-const manual=(id,fn)=>$(id).addEventListener('click',async()=>{try{$('err').textContent='';await fn()}catch(e){$('err').textContent=e.message}await refresh()});
-manual('mSend',async()=>{const r=await api('demo/send','POST',{sender:$('sender').value,receiver:$('receiver').value,amount:$('amount').value,pin:$('pin').value});
-  trace(`packet ${r.packet_id.slice(0,8)} placed on ${r.injected_into}`)});
-manual('mGossip',async()=>{const r=await api('mesh/gossip','POST');trace(`gossip round: ${r.transfers} copies moved`)});
-manual('mFlush',async()=>{const r=await api('mesh/flush','POST');
-  if(!r.results.length)trace('no bridge holds a packet yet');
-  r.results.forEach(x=>trace(`${x.bridge}: ${x.outcome}${x.reason?' ('+x.reason+')':''}`))});
-manual('mReset',async()=>{await api('mesh/reset','POST');clearScene();trace('mesh reset')});
+async function manualRun(fn){
+  if(busy)return;setBusy(true);$('err').textContent='';
+  try{await fn()}catch(e){$('err').textContent=e.message}
+  finally{setBusy(false)}
+  await refresh();   // after the animation, sync the lock badges with the real server state
+}
+$('mSend').addEventListener('click',()=>manualRun(async()=>{
+  const body={sender:$('sender').value,receiver:$('receiver').value,amount:$('amount').value,pin:$('pin').value};
+  const who=nameOf(originId),toName=nameOfVpa(body.receiver);
+  $('result').hidden=true;clearScene();manualHops=0;
+  setStep(1,`${who} unlocks the signing key with a PIN, signs the payment and locks it.`);
+  try{
+    await api('mesh/reset','POST');   // start from a clean mesh so only this payment is in play
+    const r=await api('demo/send','POST',body);
+    originId=r.injected_into;setHolding(originId,true);pulse(originId);
+    manualInfo={who,toName,paise:paise(body.amount)};
+    $('trace').textContent='';trace(`packet ${r.packet_id.slice(0,8)} placed on ${r.injected_into}`);
+    $('caption').textContent=`${who}'s phone has signed and locked the payment. Next: Step 2, run a gossip round.`;
+  }catch(e){resetSteps();$('caption').textContent='Nothing was sent. Fix the problem above and try again.';throw e}
+}));
+$('mGossip').addEventListener('click',()=>manualRun(async()=>{
+  $('result').hidden=true;
+  const r=await api('mesh/gossip','POST');
+  setStep(2,'There is no signal here, so phones pass the locked payment to whoever is in range.');
+  if(!r.moves.length){trace('gossip round: nothing moved');
+    $('caption').textContent='Nothing moved: every phone already has the payment, or no payment has been started yet (Step 1).';return}
+  await playHop(r.moves,++manualHops);
+  $('caption').textContent=`${r.moves.length} copies moved. Run another round, or go to Step 3 to let the bridges upload.`;
+}));
+$('mFlush').addEventListener('click',()=>manualRun(async()=>{
+  const r=await api('mesh/flush','POST'),ups=r.results;
+  if(!ups.length){trace('no bridge holds a packet yet');setStep(2);
+    $('caption').textContent='No bridge holds a payment yet. Run a gossip round first (Step 2).';return}
+  await playUpload(ups,headline(ups),ups.find(u=>u.reason)?.reason,manualInfo);
+  manualInfo=null;
+}));
+$('mReset').addEventListener('click',()=>manualRun(async()=>{
+  await api('mesh/reset','POST');clearScene();resetSteps();manualInfo=null;manualHops=0;
+  $('result').hidden=true;$('caption').textContent='Mesh reset. Pick who pays whom, then press Proceed for payment.';trace('mesh reset');
+}));
 refresh().catch(e=>{$('err').textContent='Could not reach the server: '+e.message});
 </script>
 </body>
